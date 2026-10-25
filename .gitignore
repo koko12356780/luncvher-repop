@@ -1,0 +1,11 @@
+.ci/
+build/
+Game/
+Updates/
+Downloads/
+LauncherUpdates/
+Publish/
+*.exe
+*.log
+current-game.json
+update-source.json

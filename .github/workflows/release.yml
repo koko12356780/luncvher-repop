@@ -1,0 +1,30 @@
+name: Build and publish launcher update
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: launcher-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check launcher version
+        id: release
+        run: python ci/build_release.py check
+      - name: Build and test launcher
+        if: steps.release.outputs.exists != 'true'
+        run: python ci/build_release.py build
+      - name: Publish launcher and first-install game
+        if: steps.release.outputs.exists != 'true'
+        run: gh release create "${{ steps.release.outputs.tag }}" build/OpenStreetsLauncher-update.zip build/launcher-latest.json build/OpenStreets-Full-Game.zip --repo "$env:GITHUB_REPOSITORY" --title "Open Streets Launcher ${{ steps.release.outputs.tag }}" --notes "One-button game and launcher updates. First installation: download OpenStreets-Full-Game.zip, extract everything, then open the launcher." --latest
