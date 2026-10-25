@@ -49,8 +49,25 @@ def package():
     for p in [archive,Path('build/OpenStreets-Full-Game.zip')]:
         with zipfile.ZipFile(p) as z:assert z.testzip() is None
     print('Launcher and full-game release assets ready.')
+def direct():
+    value,tag=version();repo=os.environ['GITHUB_REPOSITORY']
+    r=subprocess.run(['gh','release','view',tag,'--repo',repo,'--json','assets'],capture_output=True,text=True,check=True)
+    if any(a['name']=='OpenStreetsLauncher.exe' for a in json.loads(r.stdout)['assets']):
+        print('Direct launcher download already exists.');return
+    with urllib.request.urlopen(f'https://github.com/{repo}/releases/download/{tag}/launcher-latest.json',timeout=60) as response:feed=json.load(response)
+    assert feed['game']=='Open Streets Launcher' and feed['version']==value
+    assert feed['zip_url'].startswith(f'https://github.com/{repo}/releases/download/{tag}/')
+    folder=Path('build/direct');folder.mkdir(parents=True,exist_ok=True);archive=folder/'launcher.zip'
+    urllib.request.urlretrieve(feed['zip_url'],archive)
+    assert archive.stat().st_size==feed['size'] and hashlib.sha256(archive.read_bytes()).hexdigest()==feed['sha256']
+    with zipfile.ZipFile(archive) as z:
+        info=json.loads(z.read('launcher-info.json'));assert info['version']==value
+        (folder/'OpenStreetsLauncher.exe').write_bytes(z.read('OpenStreetsLauncher.exe'))
+    subprocess.run(['gh','release','upload',tag,str(folder/'OpenStreetsLauncher.exe'),'--repo',repo],check=True)
+    print('Direct launcher EXE is available for the one-time upgrade from old launchers.')
 if __name__=='__main__':
     action=sys.argv[1] if len(sys.argv)>1 else 'build'
     if action=='check':check()
     elif action=='package':package()
+    elif action=='direct':direct()
     else:fetch();build();package()
