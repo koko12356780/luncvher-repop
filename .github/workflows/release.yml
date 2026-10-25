@@ -27,4 +27,5 @@ jobs:
         run: python ci/build_release.py build
       - name: Publish launcher and first-install game
         if: steps.release.outputs.exists != 'true'
-        run: gh release create "${{ steps.release.outputs.tag }}" build/OpenStreetsLauncher-update.zip build/launcher-latest.json build/OpenStreets-Full-Game.zip --repo "$env:GITHUB_REPOSITORY" --title "Open Streets Launcher ${{ steps.release.outputs.tag }}" --notes "One-button game and launcher updates. First installation: download OpenStreets-Full-Game.zip, extract everything, then open the launcher." --latest
+        run: >-
+          gh release create "${{ steps.release.outputs.tag }}" build/OpenStreetsLauncher-update.zip build/launcher-latest.json build/OpenStreets-Full-Game.zip --repo "$env:GITHUB_REPOSITORY" --title "Open Streets Launcher ${{ steps.release.outputs.tag }}" --notes "One-button game and launcher updates. First installation: download OpenStreets-Full-Game.zip, extract everything, then open the launcher." --latest
