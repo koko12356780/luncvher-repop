@@ -26,7 +26,7 @@ def fetch():
     assert hashlib.sha256((ci/'windows_release_x86_64.exe').read_bytes()).hexdigest()==RUNTIME_HASH
 def build():
     info=json.loads(Path('.ci/game-info.json').read_text())
-    subprocess.run(['powershell','-NoProfile','-File','build.ps1','-GameFolder',str(ROOT/'.ci/Game'),'-OfficialRuntime',str(ROOT/'.ci/windows_release_x86_64.exe'),'-Destination',str(ROOT/'build/launcher'),'-GameVersion',info['version']],check=True)
+    subprocess.run(['pwsh','-NoProfile','-File','build.ps1','-GameFolder',str(ROOT/'.ci/Game'),'-OfficialRuntime',str(ROOT/'.ci/windows_release_x86_64.exe'),'-Destination',str(ROOT/'build/launcher'),'-GameVersion',info['version']],check=True)
     result=subprocess.run([str(ROOT/'build/launcher/LauncherTests.exe'),'--verify'],timeout=240)
     print(Path('build/launcher/portable-tests.log').read_text(encoding='utf8',errors='replace'))
     assert result.returncode==0
