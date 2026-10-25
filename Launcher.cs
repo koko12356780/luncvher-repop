@@ -11,6 +11,8 @@ using System.Windows.Forms;
 namespace OpenStreetsLauncher {
     static class Program {
         [STAThread] static int Main(string[] args) {
+            AppContext.SetSwitch("Switch.System.IO.UseLegacyPathHandling",false);
+            AppContext.SetSwitch("Switch.System.IO.BlockLongPaths",false);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             if(args.Length==2&&args[0]=="--apply-launcher-update")return SelfUpdater.RunHelper(args[1]);
@@ -154,18 +156,24 @@ namespace OpenStreetsLauncher {
         void ShowInfo(bool about) {
             library.Visible=false;details.Controls.Clear();details.Visible=true;
             AddLabel(details,about?"ABOUT OPEN STREETS":"TAKE THE WHEEL",28,FontStyle.Bold,34,44,790,65,Color.White);
-            string text=about ? "Open Streets\nLauncher v1.6 / GitHub game + launcher updates / Windows x64\n\nUse CHECK UPDATES to download new game versions.\nUpdates stay in separate folders, with Restore Previous available.\nUpdates download from the configured HTTPS address.\nDiscord is optional and starts off until you enable it.\n\nThe game uses the unchanged official Godot runtime.\nGame and launcher code: MIT. Engine licenses accompany the game.\nThe launcher uses Windows .NET Framework.\n\nGame files stay beside the launcher. Saved cars and coins live\nseparately and are kept when importing updates.\n\nOnly import game ZIPs from a source you trust. File checks\nconfirm integrity; they are not a digital signature."
-                : "W / Up             Accelerate\nS / Down           Brake / reverse\nA / D                  Steer\nSpace                 Handbrake; climb during flight\nCtrl                     Descend during flight\nF                         Toggle Volt Aero flight\nR                        Reset and repair\nE                        Leave / re-enter car\nShift                  Run on foot\nV / C                  Change camera\nN                        Day / night\nG                        Garage and upgrades\n1 - 5                   Buy / equip a car inside the garage\nM                        Lock / release mouse\nW + Space           Burnout at low speed\nEscape               Pause and options\n\nEarn 1 coin per 10 metres.\nAurora RS: 6,000 coins / 300 mph.\nVolt Aero: 12,000 coins / 0-60 in 0.56 s / flight.\nCrash setting: Options > Gameplay.";
+            string text=about ? "Open Streets\nLauncher v1.7 / Unreal + Godot game updates / Windows x64\n\nUse CHECK UPDATES to download new game versions.\nUpdates stay in separate folders, with Restore Previous available.\nUpdates download from the configured HTTPS address.\nDiscord is optional and starts off until you enable it.\n\nSupports the original Godot game and native Unreal releases.\nGame and launcher code: MIT. Engine licenses accompany the game.\nThe launcher uses Windows .NET Framework.\n\nGame files stay beside the launcher. Saved cars and coins live\nseparately and are kept when importing updates.\n\nOnly import game ZIPs from a source you trust. File checks\nconfirm integrity; they are not a digital signature."
+                : "W / Up             Accelerate\nS / Down           Brake / reverse\nA / D                  Steer\nSpace                 Handbrake; climb during flight\nCtrl                     Descend during flight\nF                         Toggle Volt Aero flight\nR                        Reset and repair\nE                        Leave / re-enter car\nShift                  Run on foot\nV / C                  Change camera\nN                        Day / night\nG                        Garage and upgrades\nGarage buttons        Buy / equip cars and parts\nM                        Lock / release mouse\nW + Space           Burnout at low speed\nEscape               Pause and options\n\nEarn 1 coin per 10 metres.\nAurora RS: 6,000 coins / 300 mph.\nVolt Aero: 12,000 coins / 0-60 in 0.56 s / flight.\nCrash setting: Options > Gameplay.";
             AddLabel(details,text,12,FontStyle.Regular,36,127,790,485,muted);
             var back=AddButton(details,"BACK TO LIBRARY",true,36,615,250,46);back.Click+=(s,e)=>ShowLibrary();
         }
         void StartPresence() {
+            if(installer.IsUnreal)return; // Unreal owns its optional activity connection.
             if(preview||running==null||running.HasExited||!presenceSettings.Enabled)return;
             string stateFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"Godot","app_userdata","Open Streets","presence.json");
             presence.Start(presenceSettings.ApplicationId,running.Id,stateFile);
         }
         void ShowDiscord() {
             library.Visible=false;details.Controls.Clear();details.Visible=true;
+            if(installer.IsUnreal) {
+                AddLabel(details,"DISCORD ACTIVITY",28,FontStyle.Bold,34,44,790,65,Color.White);
+                AddLabel(details,"Unreal edition: open the game's Pause menu > Options > Discord activity.\nThe game connects directly to Discord desktop. No launcher bridge is needed.",15,FontStyle.Regular,36,160,790,140,muted);
+                var unrealBack=AddButton(details,"BACK TO LIBRARY",true,36,615,250,46);unrealBack.Click+=(s,e)=>ShowLibrary();return;
+            }
             AddLabel(details,"DISCORD ACTIVITY",28,FontStyle.Bold,34,44,790,65,Color.White);
             AddLabel(details,"Let friends see your drive.",18,FontStyle.Bold,36,126,790,45,Color.White);
             AddLabel(details,"Driving at night in the Aurora RS\nCity Centre",16,FontStyle.Regular,36,179,790,70,Color.FromArgb(140,239,199));

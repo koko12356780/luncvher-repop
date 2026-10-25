@@ -12,7 +12,7 @@ def check():
     print('Release already exists; increase AssemblyInfo version.' if r.returncode==0 else 'Building launcher '+value)
 def fetch():
     ci=Path('.ci');ci.mkdir(exist_ok=True)
-    request=urllib.request.Request(f'https://github.com/{GAME_REPO}/releases/latest/download/latest.json',headers={'User-Agent':'OpenStreets-Builder'})
+    request=urllib.request.Request(f'https://github.com/{GAME_REPO}/releases/download/v0.11/latest.json',headers={'User-Agent':'OpenStreets-Builder'})
     with urllib.request.urlopen(request,timeout=60) as r:feed=json.load(r)
     assert feed['game']=='Open Streets' and feed['zip_url'].startswith(f'https://github.com/{GAME_REPO}/releases/download/')
     archive=ci/'game.zip';urllib.request.urlretrieve(feed['zip_url'],archive)
@@ -37,6 +37,25 @@ def package():
         z.writestr('launcher-info.json',json.dumps({'game':'Open Streets Launcher','version':value}))
     feed={'game':'Open Streets Launcher','version':value,'zip_url':f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/releases/download/{tag}/OpenStreetsLauncher-update.zip','sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'size':archive.stat().st_size,'notes':'One-button GitHub game and launcher updates.'}
     Path('build/launcher-latest.json').write_text(json.dumps(feed,indent=2)+'\n',encoding='utf8')
+    # Native Unreal assets are built/tested on the creator's licensed local engine.
+    # The pinned legacy game above is used only for the launcher regression tests.
+    request=urllib.request.Request(f'https://github.com/{GAME_REPO}/releases/latest/download/latest.json',headers={'User-Agent':'OpenStreets-Builder'})
+    with urllib.request.urlopen(request,timeout=60) as r:gamefeed=json.load(r)
+    if gamefeed.get('runtime')=='unreal-win64':
+        url=gamefeed['full_game_url']
+        assert re.fullmatch(r'https://github\.com/'+re.escape(GAME_REPO)+r'/releases/download/v[0-9.]+/OpenStreets-Full-Game\.zip',url)
+        source=Path('.ci/native-full.zip');urllib.request.urlretrieve(url,source)
+        assert source.stat().st_size==gamefeed['full_game_size']
+        assert hashlib.sha256(source.read_bytes()).hexdigest()==gamefeed['full_game_sha256']
+        with zipfile.ZipFile(source) as incoming,zipfile.ZipFile('build/OpenStreets-Full-Game.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as out:
+            names=incoming.namelist();assert len(names)==len(set(names)) and len(names)<5000
+            assert json.loads(incoming.read('Game/release.json'))['Runtime']=='unreal-win64'
+            for item in incoming.infolist():
+                assert not item.filename.startswith('/') and not any(v in item.filename for v in ['..','\\',':'])
+                if item.filename=='OpenStreetsLauncher.exe':out.write(folder/'OpenStreetsLauncher.exe',item.filename)
+                else:out.writestr(item,incoming.read(item))
+        with zipfile.ZipFile('build/OpenStreets-Full-Game.zip') as z:assert z.testzip() is None
+        print('Native Unreal full-game bundle and launcher assets ready.');return
     gameinfo=json.loads(Path('.ci/game-info.json').read_text())
     files=['OpenStreets.exe','OpenStreets.pck','GAME-LICENSE.txt','ENGINE-LICENSES.txt']
     receipt={'Version':gameinfo['version'],'Files':{name:hashlib.sha256((folder/'Game'/name).read_bytes()).hexdigest() for name in files}}

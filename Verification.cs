@@ -13,7 +13,7 @@ namespace OpenStreetsLauncher {
         static bool Fails(Action action){try{action();return false;}catch(Exception){return true;}}
         public static int ImportArtifact(string archive,string baseline) {
             string baseDir=AppDomain.CurrentDomain.BaseDirectory;
-            string qa=Path.Combine(baseDir,"artifact-check",Guid.NewGuid().ToString("N"));
+            string qa=Path.Combine(Path.GetTempPath(),"OpenStreetsArtifact-"+Guid.NewGuid().ToString("N").Substring(0,10));
             Directory.CreateDirectory(Path.Combine(qa,"Game"));checks=0;
             using(log=new StreamWriter(Path.Combine(baseDir,"artifact-tests.log"),true))try {
                 foreach(string name in GamePackage.Names)File.Copy(Path.Combine(baseline??Path.Combine(baseDir,"Game"),name),Path.Combine(qa,"Game",name));
@@ -22,7 +22,8 @@ namespace OpenStreetsLauncher {
                 Check(game.CanRollback&&game.DisplayVersion.Length>0,"Delivered ZIP imports and passes its hashes: "+Path.GetFileName(archive));
                 Check(new GamePackage(qa).GameDirectory==game.GameDirectory,"Delivered ZIP selection persists across restart");
                 using(var process=game.Launch(true))Check(process.WaitForExit(30000)&&process.ExitCode==0,"Delivered ZIP's game actually starts");
-                Check(!File.ReadAllText(Path.Combine(qa,"game-smoke.log")).Contains("ERROR"),"Delivered ZIP has no runtime resource/script errors");
+                if(game.IsUnreal)Check(new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(File.ReadAllText(Path.Combine(qa,"packaged-smoke.json")))["passed"].Equals(true),"Delivered native game passes its packaged runtime checks");
+                else Check(!File.ReadAllText(Path.Combine(qa,"game-smoke.log")).Contains("ERROR"),"Delivered ZIP has no runtime resource/script errors");
                 game.Rollback(CancellationToken.None);game.Validate(CancellationToken.None);
                 Check(game.GameDirectory==Path.Combine(qa,"Game"),"Delivered ZIP can be rolled back to bundled game");
                 log.WriteLine("RESULT: "+checks+" artifact checks passed; 0 failures; baseline "+before.DisplayVersion);return 0;

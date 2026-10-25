@@ -22,10 +22,11 @@ namespace OpenStreetsLauncher {
             try{Inspect(path);}catch{archive.Dispose();throw;}
         }
         void Inspect(string path) {
-            if(archive.Entries.Count>512)throw new IOException("This is not an Open Streets game update ZIP.");
+            if(archive.Entries.Count>8192)throw new IOException("This is not an Open Streets game update ZIP.");
             ZipArchiveEntry manifest=null;
             foreach(var e in archive.Entries) {
                 string name=e.FullName;
+                if(((e.ExternalAttributes>>16)&0xf000)==0xa000)throw new IOException("Links are not allowed in game updates.");
                 if(name.IndexOf('\\')>=0||name.StartsWith("/")||name.IndexOf(':')>=0||name.IndexOf('\0')>=0)throw new IOException("Unsafe path in update ZIP.");
                 foreach(string part in name.Split('/'))if(part==".."||part==".")throw new IOException("Unsafe path in update ZIP.");
                 if(entries.ContainsKey(name))throw new IOException("Duplicate filenames in update ZIP.");
@@ -37,6 +38,11 @@ namespace OpenStreetsLauncher {
             }
             if(manifest==null)throw new IOException("Choose a game update or Windows game ZIP containing CHECKSUMS.sha256. A source-project ZIP is not a playable update.");
             prefix=manifest.FullName.Substring(0,manifest.FullName.Length-"CHECKSUMS.sha256".Length);
+            ZipArchiveEntry runtimeInfo;
+            if(entries.TryGetValue(prefix+"update-info.json",out runtimeInfo)) {
+                var metadata=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(Text(runtimeInfo));
+                if(metadata!=null&&metadata.ContainsKey("runtime")&&(metadata["runtime"] as string)=="unreal-win64") { InspectUnreal(manifest,metadata);return; }
+            }
             var hashes=new Dictionary<string,string>(StringComparer.Ordinal);
             foreach(string line in Text(manifest).Split('\n')) {
                 if(String.IsNullOrWhiteSpace(line))continue;
@@ -68,15 +74,48 @@ namespace OpenStreetsLauncher {
             if(String.IsNullOrWhiteSpace(version)||version.Length>80||Regex.IsMatch(version,"[\\x00-\\x1f]"))throw new IOException("Invalid update version label.");
             Record=new ReleaseRecord{Version=version,Files=hashes};
         }
-        static string Text(ZipArchiveEntry entry) {
-            if(entry.Length>65536)throw new IOException("Update metadata is too large.");
+        void InspectUnreal(ZipArchiveEntry manifest,Dictionary<string,object> metadata) {
+            if(!metadata.ContainsKey("game")||(metadata["game"] as string)!="Open Streets"||!metadata.ContainsKey("version"))throw new IOException("This Unreal package is for a different game.");
+            var hashes=new Dictionary<string,string>(StringComparer.Ordinal);
+            foreach(string line in Text(manifest,1048576).Split('\n')) {
+                if(String.IsNullOrWhiteSpace(line))continue;
+                var match=Regex.Match(line.TrimEnd('\r'),"\\A([a-fA-F0-9]{64})  Game/(.+)\\z");
+                if(!match.Success)throw new IOException("Invalid Unreal checksum manifest.");
+                string name=match.Groups[2].Value;GamePackage.SafeGamePath(name);
+                if(hashes.ContainsKey(name))throw new IOException("Duplicate Unreal game hash.");
+                hashes.Add(name,match.Groups[1].Value.ToLowerInvariant());
+            }
+            Record=new ReleaseRecord{Runtime="unreal-win64",Version=metadata["version"] as string,Files=hashes};
+            GamePackage.ValidateUnrealReceipt(Record);
+            long total=0;
+            foreach(string name in hashes.Keys) {
+                ZipArchiveEntry entry;if(!entries.TryGetValue(prefix+"Game/"+name,out entry)||entry.Length<=0||entry.Length>2L*1024*1024*1024)throw new IOException("Missing or oversized Unreal game file: "+name);
+                total+=entry.Length;if(total>4L*1024*1024*1024)throw new IOException("Unreal update expands beyond its size limit.");
+            }
+            foreach(string name in entries.Keys)if(name.StartsWith(prefix+"Game/",StringComparison.Ordinal)&&!name.EndsWith("/",StringComparison.Ordinal)&&name!=prefix+"Game/release.json"&&!hashes.ContainsKey(name.Substring(prefix.Length+5)))throw new IOException("Unlisted Unreal game file.");
+        }
+        static string Text(ZipArchiveEntry entry,int limit=65536) {
+            if(entry.Length>limit)throw new IOException("Update metadata is too large.");
             using(var source=entry.Open())using(var output=new MemoryStream()) {
                 byte[] buffer=new byte[4096];int n;
-                while((n=source.Read(buffer,0,buffer.Length))>0){if(output.Length+n>65536)throw new IOException("Update metadata is too large.");output.Write(buffer,0,n);}
+                while((n=source.Read(buffer,0,buffer.Length))>0){if(output.Length+n>limit)throw new IOException("Update metadata is too large.");output.Write(buffer,0,n);}
                 return Encoding.UTF8.GetString(output.ToArray()).TrimStart('\ufeff');
             }
         }
         public void Extract(string directory,string runtime,CancellationToken token,Action<string> report) {
+            if(Record.Runtime=="unreal-win64") {
+                foreach(string name in Record.Files.Keys) {
+                    token.ThrowIfCancellationRequested();report("Importing Unreal game: "+name);
+                    string target=Path.GetFullPath(Path.Combine(directory,name.Replace('/',Path.DirectorySeparatorChar)));
+                    if(!target.StartsWith(Path.GetFullPath(directory)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("Unsafe extraction path.");
+                    Directory.CreateDirectory(GamePackage.LongPath(Path.GetDirectoryName(target)));
+                    using(var input=entries[prefix+"Game/"+name].Open())using(var output=new FileStream(GamePackage.LongPath(target),FileMode.CreateNew,FileAccess.Write,FileShare.None)) {
+                        var buffer=new byte[65536];int n;long total=0;
+                        while((n=input.Read(buffer,0,buffer.Length))>0){token.ThrowIfCancellationRequested();total+=n;if(total>entries[prefix+"Game/"+name].Length)throw new IOException("Unreal file expands beyond its declared size.");output.Write(buffer,0,n);}output.Flush(true);
+                    }
+                    if(GamePackage.FileHash(target)!=Record.Files[name])throw new IOException("Unreal update failed its checksum: "+name);
+                }return;
+            }
             if(GamePackage.FileHash(runtime)!=BuildInfo.OfficialRuntimeHash)throw new IOException("The existing game runtime is missing or changed. Restore the complete launcher download first.");
             foreach(string name in GamePackage.Names) {
                 token.ThrowIfCancellationRequested();report("Importing "+name+"...");
